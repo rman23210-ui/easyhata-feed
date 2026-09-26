@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Анкета договору</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:var(--tg-theme-bg-color,#fff); --bg2:var(--tg-theme-secondary-bg-color,#f1f3f2);
+  --ink:var(--tg-theme-text-color,#16211c); --hint:var(--tg-theme-hint-color,#6b7a72);
+  --acc:var(--tg-theme-button-color,#1f5c3d); --on-acc:var(--tg-theme-button-text-color,#fff);
+  --line:color-mix(in srgb,var(--hint) 30%,transparent); --err:#d0342c; --warn:#b7791f;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg2);color:var(--ink);font:15px/1.45 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;
+  padding:12px 12px calc(24px + env(safe-area-inset-bottom,0px))}
+.deal{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--bg);padding:4px;border-radius:12px;margin-bottom:10px}
+.deal button{border:0;border-radius:9px;padding:10px;font:600 15px/1.2 inherit;background:transparent;color:var(--ink)}
+.deal button[aria-pressed="true"]{background:var(--acc);color:var(--on-acc)}
+.lead{color:var(--hint);font-size:13px;margin:4px 4px 12px}
+.card{background:var(--bg);border-radius:12px;padding:14px;margin-bottom:10px}
+.card h3{margin:0;font-size:15.5px}
+.card .h{color:var(--hint);font-size:12.5px;margin-top:2px}
+.modes{display:flex;gap:6px;margin-top:10px}
+.modes button{flex:1;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:9px;
+  padding:8px 4px;font:500 13.5px/1.2 inherit}
+.modes button[aria-pressed="true"]{background:var(--acc);border-color:var(--acc);color:var(--on-acc)}
+.note{font-size:12.5px;color:var(--hint);margin-top:8px}
+.fields{display:grid;gap:10px;margin-top:12px}
+.f label{display:block;font-size:12.5px;color:var(--hint);margin-bottom:4px}
+input,select,textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 11px;
+  background:var(--bg2);color:var(--ink);font:16px/1.3 inherit}
+textarea{min-height:60px;resize:vertical}
+.f.bad input{border-color:var(--err)}
+.msg{font-size:12px;margin-top:3px;color:var(--err)}
+.words{font-size:12.5px;color:var(--acc);margin-top:3px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.status{position:sticky;top:0;z-index:2;background:var(--bg2);padding:4px 4px 8px;font-size:12.5px;color:var(--hint)}
+.outside{background:var(--bg);border-radius:12px;padding:14px;color:var(--warn);margin-bottom:10px}
+#send{display:none;width:100%;border:0;border-radius:12px;padding:14px;font:600 16px inherit;background:var(--acc);color:var(--on-acc);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="outside" id="outside" hidden>Анкету треба відкривати кнопкою «Открыть анкету» в боті — інакше дані нікуди не підуть.</div>
+<div class="deal" role="group" aria-label="Угода">
+  <button type="button" id="d-rent" aria-pressed="true">Оренда</button>
+  <button type="button" id="d-sale" aria-pressed="false">Продаж (завдаток)</button>
+</div>
+<p class="lead">По кожному пункту: <b>📷 фото</b> — бот попросить після анкети, <b>✍️ вручну</b> — впишіть тут, <b>—</b> прочерк у договорі.</p>
+<div class="status" id="status"></div>
+<div id="list"></div>
+<button id="send" type="button">Надіслати в бот</button>
+
+<script>
+const tg = window.Telegram && Telegram.WebApp;
+const inTg = !!(tg && tg.initData);
+if (tg) { tg.ready(); tg.expand(); }
+if (!inTg) document.getElementById("outside").hidden = false;
+
+/* ---- числа прописом ---- */
+const O=[["",""],["один","одна"],["два","дві"],["три","три"],["чотири","чотири"],["п'ять","п'ять"],["шість","шість"],["сім","сім"],["вісім","вісім"],["дев'ять","дев'ять"]];
+const TN=["десять","одинадцять","дванадцять","тринадцять","чотирнадцять","п'ятнадцять","шістнадцять","сімнадцять","вісімнадцять","дев'ятнадцять"];
+const TS=["","","двадцять","тридцять","сорок","п'ятдесят","шістдесят","сімдесят","вісімдесят","дев'яносто"];
+const HS=["","сто","двісті","триста","чотириста","п'ятсот","шістсот","сімсот","вісімсот","дев'ятсот"];
+const pl=(n,f)=>{const a=n%100,b=n%10;return a>10&&a<15?f[2]:b===1?f[0]:b>1&&b<5?f[1]:f[2];};
+function tri(n,fem){const w=[],h=n/100|0,r=n%100;if(h)w.push(HS[h]);if(r>9&&r<20)w.push(TN[r-10]);else{if(r/10|0)w.push(TS[r/10|0]);if(r%10)w.push(O[r%10][fem?1:0]);}return w.join(" ");}
+function words(n,fem){if(!n)return"";const m=n/1e6|0,t=(n%1e6)/1e3|0,r=n%1e3,p=[];
+  if(m)p.push(tri(m,false),pl(m,["мільйон","мільйони","мільйонів"]));
+  if(t)p.push(tri(t,true),pl(t,["тисяча","тисячі","тисяч"]));if(r)p.push(tri(r,fem));return p.join(" ");}
+
+/* ---- маски і перевірки ---- */
+const dg=s=>String(s).replace(/\D/g,"");
+const MASK={
+  date:s=>{const d=dg(s).slice(0,8);return d.length>4?d.slice(0,2)+"."+d.slice(2,4)+"."+d.slice(4):d.length>2?d.slice(0,2)+"."+d.slice(2):d;},
+  phone:s=>{let d=dg(s);if("380".startsWith(d))return d?"+"+d:"";if(d[0]==="0")d="38"+d;if(!d.startsWith("380"))d="380"+d;d=d.slice(0,12);
+    return"+"+[d.slice(0,3),d.slice(3,5),d.slice(5,8),d.slice(8,10),d.slice(10,12)].filter(Boolean).join(" ");},
+  money:s=>dg(s).replace(/^0+(?=\d)/,"").replace(/\B(?=(\d{3})+(?!\d))/g," "),
+  dec:s=>String(s).replace(/[^\d.,]/g,"").replace(".",","),
+  int:s=>dg(s).slice(0,3), digits:s=>dg(s).slice(0,20), tax:s=>dg(s).slice(0,10), docnum:s=>dg(s).slice(0,9),
+  series:s=>String(s).toUpperCase().replace(/[^А-ЯІЇЄҐA-Z]/g,"").slice(0,2),
+};
+function okDate(v){const m=/^(\d\d)\.(\d\d)\.(\d{4})$/.exec(v);if(!m)return false;const d=new Date(+m[3],m[2]-1,+m[1]);
+  return d.getDate()==+m[1]&&d.getMonth()==m[2]-1&&+m[3]>1900&&+m[3]<2100;}
+const CHECK={
+  date:v=>okDate(v)?"":"Формат ДД.ММ.РРРР",
+  phone:v=>dg(v).length===12?"":"Має бути +380 і 9 цифр",
+  tax:v=>dg(v).length===10?"":"РНОКПП — 10 цифр",
+  docnum:(v,vals,key)=>{const t=vals[key.replace("doc_number","doc_type")]||"id_card",n=dg(v).length;
+    return t==="passport"?(n===6?"":"У книжечці номер з 6 цифр"):(n===9?"":"Номер ID-картки — 9 цифр");},
+};
+const SELECT={
+  sex:[["","—"],["f","жінка"],["m","чоловік"]],
+  doctype:[["id_card","ID-картка"],["passport","паспорт-книжечка"]],
+  marital:[["","—"],["не перебуває у шлюбі","не у шлюбі"],["у шлюбі","у шлюбі"],["розлучений(а)","розлучений(а)"],["вдівець / вдова","вдівець / вдова"]],
+};
+const INPUTMODE={date:"numeric",phone:"tel",money:"numeric",dec:"decimal",int:"numeric",digits:"numeric",tax:"numeric",docnum:"numeric"};
+
+/* ---- стан ---- */
+let A=null, deal="rent";
+const S={rent:{m:{},v:{}},sale:{m:{},v:{}}};
+const KEY="dogovir-draft-v1";
+try{const d=JSON.parse(localStorage.getItem(KEY)||"null");if(d&&d.rent&&d.sale){S.rent=d.rent;S.sale=d.sale;deal=d.deal||deal;}}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify({...S,deal}));}catch(e){}};
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const MODE_TEXT={p:"📷 Фото",t:"✍️ Вручну",s:"— Прочерк"};
+
+function aspects(){return A[deal].aspects;}
+function mode(a){return S[deal].m[a.k]||a.d;}
+function shown(key,type){ // серія — лише для паспорта-книжечки; ПІБ подружжя — лише у шлюбі
+  const v=S[deal].v;
+  if(type==="series")return v[key.replace("doc_series","doc_type")]==="passport";
+  if(key.endsWith(".spouse"))return v[key.replace("spouse","marital")]==="у шлюбі";
+  return true;
+}
+
+function fieldHTML(f){
+  const [key,label,type,def]=f, id="i_"+key.replace(/\W/g,"_");
+  if(!shown(key,type))return"";
+  let v=S[deal].v[key]; if(v===undefined&&def!==undefined){v=def;S[deal].v[key]=def;}
+  let ctl;
+  if(SELECT[type]){if(v===undefined){v=SELECT[type][0][0];S[deal].v[key]=v;}
+    ctl=`<select id="${id}" data-k="${key}" data-t="${type}">`+SELECT[type].map(([o,t])=>`<option value="${esc(o)}"${o===v?" selected":""}>${t}</option>`).join("")+`</select>`;}
+  else if(type==="area")ctl=`<textarea id="${id}" data-k="${key}" data-t="${type}">${esc(v)}</textarea>`;
+  else ctl=`<input id="${id}" data-k="${key}" data-t="${type}" value="${esc(v)}" inputmode="${INPUTMODE[type]||"text"}"`+
+    (type==="name"?' autocapitalize="characters"':"")+(type==="phone"?' type="tel"':"")+' autocomplete="off">';
+  const words=type==="money"?`<div class="words" id="w_${id}"></div>`:"";
+  return `<div class="f" id="b_${id}"><label for="${id}">${esc(label)}</label>${ctl}${words}<div class="msg" id="m_${id}"></div></div>`;
+}
+
+function render(){
+  document.getElementById("d-rent").setAttribute("aria-pressed",deal==="rent");
+  document.getElementById("d-sale").setAttribute("aria-pressed",deal==="sale");
+  document.getElementById("list").innerHTML=aspects().map(a=>{
+    const m=mode(a);
+    const btns=a.m.split("").map(x=>`<button type="button" data-a="${a.k}" data-m="${x}" aria-pressed="${x===m}">${MODE_TEXT[x]}</button>`).join("");
+    const body=m==="t"?`<div class="fields">${a.f.map(fieldHTML).join("")}</div>`:
+      m==="p"?`<div class="note">Бот попросить фото після того, як надішлете анкету.</div>`:
+      `<div class="note">У договорі буде «—».</div>`;
+    return `<div class="card"><h3>${esc(a.l)}</h3>${a.h?`<div class="h">${esc(a.h)}</div>`:""}<div class="modes">${btns}</div>${body}</div>`;
+  }).join("");
+  document.querySelectorAll(".modes button").forEach(b=>b.onclick=()=>{S[deal].m[b.dataset.a]=b.dataset.m;save();render();});
+  document.querySelectorAll("[data-k]").forEach(bind);
+  status();
+}
+
+function bind(el){
+  const key=el.dataset.k,type=el.dataset.t;
+  const upd=()=>{
+    if(MASK[type]){const m=MASK[type](el.value);if(m!==el.value)el.value=m;}
+    S[deal].v[key]=el.value;save();
+    if(type==="money"){const n=+dg(el.value),usd=el.closest(".f").querySelector("label").textContent.includes("$");
+      document.getElementById("w_"+el.id).textContent=n?words(n,!usd)+(usd?" доларів":" гривень"):"";}
+    if(document.getElementById("b_"+el.id).classList.contains("bad"))check(el);
+    status();
+  };
+  el.addEventListener("input",upd);
+  el.addEventListener("change",()=>{upd();if(type==="doctype"||type==="marital")render();});
+  el.addEventListener("blur",()=>check(el));
+  if(type==="money")upd();
+}
+function check(el){
+  const key=el.dataset.k,type=el.dataset.t,v=el.value.trim();
+  const err=v&&CHECK[type]?CHECK[type](v,S[deal].v,key):"";
+  document.getElementById("b_"+el.id).classList.toggle("bad",!!err);
+  document.getElementById("m_"+el.id).textContent=err;
+  return !err;
+}
+
+function payload(){
+  const out={v:1,d:deal,a:{}};
+  for(const a of aspects()){
+    const m=mode(a),item={m};
+    if(m==="t"){item.f={};for(const [key,,type] of a.f){if(!shown(key,type))continue;
+      const v=String(S[deal].v[key]??"").trim();if(v)item.f[key]=v;}}
+    out.a[a.k]=item;
+  }
+  return JSON.stringify(out);
+}
+function status(){
+  const c={p:0,t:0,s:0};aspects().forEach(a=>c[mode(a)]++);
+  const bytes=new TextEncoder().encode(payload()).length;
+  document.getElementById("status").textContent=
+    `${A[deal].name} · вручну ${c.t} · фото ${c.p} · прочерк ${c.s}`+(bytes>3800?` · ⚠️ ${bytes} з 4096 байт`:"");
+}
+
+function send(){
+  const bad=[...document.querySelectorAll("[data-k]")].filter(el=>!check(el));
+  if(bad.length){bad[0].scrollIntoView({block:"center"});tg&&tg.HapticFeedback&&tg.HapticFeedback.notificationOccurred("error");return;}
+  const data=payload();
+  if(new TextEncoder().encode(data).length>4096){
+    const t="Забагато тексту для Telegram (ліміт 4 КБ). Переведіть частину пунктів на фото.";
+    tg&&tg.showAlert?tg.showAlert(t):alert(t);return;}
+  if(!inTg)return;
+  try{localStorage.removeItem(KEY);}catch(e){}
+  tg.sendData(data);
+}
+
+document.getElementById("d-rent").onclick=()=>{deal="rent";save();render();};
+document.getElementById("d-sale").onclick=()=>{deal="sale";save();render();};
+if(tg&&tg.MainButton&&inTg){tg.MainButton.setText("Надіслати в бот");tg.MainButton.onClick(send);tg.MainButton.show();}
+else{const b=document.getElementById("send");b.style.display="block";b.onclick=send;}
+
+fetch("../aspects.json",{cache:"no-store"}).then(r=>r.json()).then(j=>{A=j;render();})
+  .catch(()=>{document.getElementById("list").innerHTML='<div class="card">Не вдалося завантажити анкету. Закрийте й відкрийте знову.</div>';});
+</script>
+</body>
+</html>
