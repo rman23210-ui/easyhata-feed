@@ -54,7 +54,9 @@ textarea{min-height:60px;resize:vertical}
 
 <script>
 const tg = window.Telegram && Telegram.WebApp;
-const inTg = !!(tg && tg.initData);
+// initData Telegram не передаёт анкетам с обычной кнопки клавиатуры —
+// а только такие и могут sendData. Признак Telegram — платформа.
+const inTg = !!(tg && tg.platform && tg.platform !== "unknown");
 if (tg) { tg.ready(); tg.expand(); }
 if (!inTg) document.getElementById("outside").hidden = false;
 
